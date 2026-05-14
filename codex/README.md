@@ -20,6 +20,7 @@ src/
     playback.py
     session_start.py
     stop.py
+    tts_playback_supervisor.py
 pyproject.toml
 ```
 
@@ -121,3 +122,20 @@ The current packaged runtime uses code defaults when launched through
 does not execute from the Codex plugin cache. A future iteration should add a
 stable user config path or environment override if per-user settings are needed
 with the Git-backed launcher.
+
+## Playback Cancellation
+
+The Stop hook writes the generated WAV and starts the packaged playback
+supervisor with `python -m tts_hook.tts_playback_supervisor`. The supervisor
+owns playback until the audio player exits, then removes the temporary WAV file.
+
+Press Escape in the focused Codex terminal or tmux pane to cancel the current
+playback. Cancellation is best-effort and terminal-scoped: it only affects the
+audio player launched for the current hook result, and it depends on the
+supervisor being able to read `/dev/tty`.
+
+If `/dev/tty` is unavailable or cannot be configured for cbreak input, playback
+continues normally without Escape cancellation. There is no fallback cancel
+command or global hotkey.
+
+The cancel key is fixed to Escape. It is not configurable.

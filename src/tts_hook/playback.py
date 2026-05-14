@@ -8,6 +8,7 @@ from typing import Sequence
 
 import os
 import shutil
+import signal
 import subprocess
 
 AUTO_PLAYERS: tuple[tuple[str, ...], ...] = (
@@ -26,6 +27,22 @@ class PlaybackResult:
     command: tuple[str, ...] = ()
     pid: int | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class PlaybackProcessResult:
+    """Success or failure details for a process-group playback launch."""
+
+    ok: bool
+    command: tuple[str, ...] = ()
+    process: subprocess.Popen[bytes] | None = None
+    error: str | None = None
+
+    @property
+    def pid(self) -> int | None:
+        """Return the child PID when playback was launched."""
+
+        return None if self.process is None else self.process.pid
 
 
 def choose_player_command(player: str, *, path_env: str | None = None) -> tuple[str, ...] | None:
@@ -50,6 +67,84 @@ def choose_player_command(player: str, *, path_env: str | None = None) -> tuple[
     return None
 
 
+def build_playback_command(
+    wav_path: Path,
+    *,
+    player: str = "auto",
+    path_env: str | None = None,
+) -> tuple[str, ...] | None:
+    """Return the full audio playback command for ``wav_path``."""
+
+    command_prefix = choose_player_command(player, path_env=path_env)
+    if command_prefix is None:
+        return None
+    return (*command_prefix, str(wav_path))
+
+
+def launch_process_group(command: Sequence[str]) -> subprocess.Popen[bytes]:
+    """Launch ``command`` in a new process group with child output suppressed."""
+
+    return subprocess.Popen(  # noqa: S603
+        tuple(command),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def launch_audio_player_process(
+    wav_path: Path,
+    *,
+    player: str = "auto",
+    path_env: str | None = None,
+) -> PlaybackProcessResult:
+    """Start host playback for a WAV file in its own process group."""
+
+    command = build_playback_command(wav_path, player=player, path_env=path_env)
+    if command is None:
+        return PlaybackProcessResult(ok=False, error=f"No playback command found for player={player!r}")
+
+    try:
+        process = launch_process_group(command)
+    except OSError as exc:
+        return PlaybackProcessResult(ok=False, command=command, error=str(exc))
+
+    return PlaybackProcessResult(ok=True, command=command, process=process)
+
+
+def terminate_process_group(process: subprocess.Popen[bytes], *, timeout_seconds: float = 0.5) -> bool:
+    """Terminate a playback process group, escalating to SIGKILL after timeout.
+
+    Returns ``True`` when the process had already exited or stopped after
+    SIGTERM, and ``False`` when SIGKILL escalation was needed.
+    """
+
+    if process.poll() is not None:
+        return True
+
+    try:
+        process_group_id = os.getpgid(process.pid)
+    except ProcessLookupError:
+        return True
+
+    try:
+        os.killpg(process_group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+
+    try:
+        process.wait(timeout=timeout_seconds)
+        return True
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process_group_id, signal.SIGKILL)
+        except ProcessLookupError:
+            return False
+        process.wait()
+        return False
+
+
 def play_audio_file(
     wav_path: Path,
     *,
@@ -63,18 +158,21 @@ def play_audio_file(
     reserved for Codex hook JSON.
     """
 
-    command_prefix = choose_player_command(player, path_env=path_env)
-    if command_prefix is None:
+    command = build_playback_command(wav_path, player=player, path_env=path_env)
+    if command is None:
         return PlaybackResult(ok=False, error=f"No playback command found for player={player!r}")
 
-    command = (*command_prefix, str(wav_path))
     try:
-        process = subprocess.Popen(  # noqa: S603
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=not blocking,
+        process = (
+            subprocess.Popen(  # noqa: S603
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=False,
+            )
+            if blocking
+            else launch_process_group(command)
         )
     except OSError as exc:
         return PlaybackResult(ok=False, command=command, error=str(exc))
@@ -91,4 +189,3 @@ def command_display(command: Sequence[str]) -> str:
     """Return a concise command string for logs."""
 
     return " ".join(command)
-

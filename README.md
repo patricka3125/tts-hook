@@ -16,6 +16,7 @@ after the hook scope and behavior are settled.
 ## Docs
 
 - [Codex hook design](docs/codex-hook-design.md)
+- [Escape cancel playback design](docs/escape-cancel-playback-design.md)
 - [Codex plugin scaffold](codex/README.md)
 
 ## Proposed config

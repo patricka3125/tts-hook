@@ -6,7 +6,6 @@ from pathlib import Path
 from threading import Thread
 from typing import Any
 import json
-import os
 import subprocess
 import sys
 import time
@@ -17,10 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from tts_hook import stop as stop_hook_module  # noqa: E402
 from tts_hook.config import load_config  # noqa: E402
 from tts_hook.logging import HookLogger  # noqa: E402
 from tts_hook.playback import choose_player_command, play_audio_file  # noqa: E402
-from tts_hook.stop import extract_assistant_message, main, speak_last_assistant_message  # noqa: E402
+from tts_hook.stop import extract_assistant_message, main, spawn_playback_supervisor, speak_last_assistant_message  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "stop"
 
@@ -69,6 +69,26 @@ def make_fake_player(bin_dir: Path, name: str = "pw-play", *, sleep_seconds: flo
         encoding="utf-8",
     )
     player.chmod(0o755)
+    return marker
+
+
+def write_fake_supervisor(plugin_root: Path, *, sleep_seconds: float = 0.0) -> Path:
+    marker = plugin_root / "supervisor_args.json"
+    supervisor = plugin_root / "src" / "tts_hook" / "tts_playback_supervisor.py"
+    supervisor.parent.mkdir(parents=True, exist_ok=True)
+    supervisor.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        "import pathlib\n"
+        "import sys\n"
+        "import time\n"
+        "print('unexpected supervisor stdout')\n"
+        "sys.stderr.write('unexpected supervisor stderr\\n')\n"
+        f"pathlib.Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+        f"time.sleep({sleep_seconds})\n",
+        encoding="utf-8",
+    )
+    supervisor.chmod(0o755)
     return marker
 
 
@@ -149,21 +169,52 @@ def test_malformed_stop_input_returns_valid_json_and_stderr_only(tmp_path: Path)
     assert "not valid JSON" in stderr.getvalue()
 
 
+def test_config_error_returns_valid_json_and_does_not_spawn_supervisor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "tts-hook.toml").write_text("[kokoro]\nport = \"bad\"\n", encoding="utf-8")
+    stdout = StringIO()
+    stderr = StringIO()
+    spawned: list[Path] = []
+
+    def fake_spawn(wav_path: Path, config: Any) -> Any:
+        spawned.append(wav_path)
+        return stop_hook_module.PlaybackResult(ok=True, command=("supervisor", str(wav_path)), pid=123)
+
+    monkeypatch.setattr(stop_hook_module, "spawn_playback_supervisor", fake_spawn)
+
+    exit_code = main(
+        stdin=StringIO(read_fixture("normal.json")),
+        stdout=stdout,
+        stderr=stderr,
+        plugin_root=tmp_path,
+    )
+
+    assert exit_code == 0
+    assert json.loads(stdout.getvalue()) == {"continue": True}
+    assert "Could not load plugin-local TTS config" in stderr.getvalue()
+    assert spawned == []
+
+
 def test_successful_kokoro_response_writes_unique_wavs_and_preserves_full_payload(
     tmp_path: Path,
     kokoro_speech_server: tuple[ThreadingHTTPServer, dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     server, state = kokoro_speech_server
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    marker = make_fake_player(bin_dir)
-    monkeypatch.setenv("PATH", str(bin_dir))
     write_config(tmp_path, port=server.server_port, log_path=tmp_path / "hook.log", voice="af_sarah")
     config = load_config(tmp_path)
     logger = HookLogger.from_config(config, stderr=StringIO())
     message = read_fixture("long_multiparagraph.json")
     payload = json.loads(message)
+    spawned: list[tuple[Path, str, bool]] = []
+
+    def fake_spawn(wav_path: Path, config: Any) -> Any:
+        spawned.append((wav_path, config.playback.player, config.playback.blocking))
+        return stop_hook_module.PlaybackResult(ok=True, command=("supervisor", str(wav_path)), pid=123)
+
+    monkeypatch.setattr(stop_hook_module, "spawn_playback_supervisor", fake_spawn)
 
     first = speak_last_assistant_message(payload, config, logger)
     second = speak_last_assistant_message(payload, config, logger)
@@ -175,10 +226,7 @@ def test_successful_kokoro_response_writes_unique_wavs_and_preserves_full_payloa
     assert second.suffix == ".wav"
     assert first.read_bytes() == b"RIFFfake-wave"
     assert second.read_bytes() == b"RIFFfake-wave"
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline and not marker.exists():
-        time.sleep(0.05)
-    assert marker.exists()
+    assert spawned == [(first, "auto", False), (second, "auto", False)]
     assert state["requests"][0]["path"] == "/v1/audio/speech"
     assert state["requests"][0]["content_type"] == "application/json"
     assert state["requests"][0]["payload"] == {
@@ -208,14 +256,18 @@ def test_kokoro_request_failure_logs_without_breaking_hook(tmp_path: Path) -> No
     assert "Kokoro speech request failed" in stderr.getvalue()
 
 
-def test_no_playback_command_logs_warning_and_returns_valid_hook_json(
+def test_supervisor_spawn_failure_logs_warning_and_returns_valid_hook_json(
     tmp_path: Path,
     kokoro_speech_server: tuple[ThreadingHTTPServer, dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     server, _state = kokoro_speech_server
-    monkeypatch.setenv("PATH", "")
     write_config(tmp_path, port=server.server_port, log_path=tmp_path / "hook.log")
+    monkeypatch.setattr(
+        stop_hook_module.subprocess,
+        "Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spawn failed")),
+    )
     stdout = StringIO()
     stderr = StringIO()
 
@@ -228,7 +280,49 @@ def test_no_playback_command_logs_warning_and_returns_valid_hook_json(
 
     assert exit_code == 0
     assert json.loads(stdout.getvalue()) == {"continue": True}
-    assert "Playback did not start" in stderr.getvalue()
+    assert "Playback supervisor did not start" in stderr.getvalue()
+
+
+def test_spawn_playback_supervisor_passes_wav_player_and_blocking_option(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_config(tmp_path, port=9, log_path=tmp_path / "hook.log", player="ffplay -volume 20", blocking=True)
+    config = load_config(tmp_path)
+    wav = tmp_path / "audio.wav"
+    captured: dict[str, Any] = {}
+
+    class FakeProcess:
+        pid = 456
+
+    def fake_popen(command: tuple[str, ...], **kwargs: Any) -> FakeProcess:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return FakeProcess()
+
+    monkeypatch.setattr(stop_hook_module.subprocess, "Popen", fake_popen)
+
+    result = spawn_playback_supervisor(wav, config)
+
+    assert result.ok is True
+    assert result.pid == 456
+    assert result.command == captured["command"]
+    assert captured["command"] == (
+        sys.executable,
+        "-m",
+        "tts_hook.tts_playback_supervisor",
+        str(wav),
+        "--player",
+        "ffplay -volume 20",
+        "--blocking",
+    )
+    assert captured["kwargs"] == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+        "cwd": tmp_path,
+    }
 
 
 def test_auto_player_selection_order(tmp_path: Path) -> None:
@@ -295,14 +389,16 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
     server, state = kokoro_speech_server
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    marker = make_fake_player(bin_dir, sleep_seconds=0.5)
-    write_config(tmp_path, port=server.server_port, log_path=tmp_path / "hook.log")
+    player_marker = make_fake_player(bin_dir, sleep_seconds=0.5)
+    supervisor_marker = write_fake_supervisor(tmp_path, sleep_seconds=1.0)
+    write_config(tmp_path, port=server.server_port, log_path=tmp_path / "hook.log", player="pw-play", blocking=True)
     stdout = StringIO()
     stderr = StringIO()
     start = time.monotonic()
 
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ.get('PATH', '')}")
+        monkeypatch.setenv("PATH", str(bin_dir))
+        monkeypatch.setenv("PYTHONPATH", str(tmp_path / "src"))
         exit_code = main(
             stdin=StringIO(read_fixture("normal.json")),
             stdout=stdout,
@@ -318,9 +414,12 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
     assert elapsed < 0.5
     assert state["requests"][0]["payload"]["input"] == "Codex finished the requested change."
     deadline = time.monotonic() + 2
-    while time.monotonic() < deadline and not marker.exists():
+    while time.monotonic() < deadline and not supervisor_marker.exists():
         time.sleep(0.05)
-    assert marker.exists()
+    supervisor_args = json.loads(supervisor_marker.read_text(encoding="utf-8"))
+    assert supervisor_args[1:] == ["--player", "pw-play", "--blocking"]
+    assert Path(supervisor_args[0]).suffix == ".wav"
+    assert not player_marker.exists()
 
 
 def test_no_max_chars_policy_exists() -> None:
