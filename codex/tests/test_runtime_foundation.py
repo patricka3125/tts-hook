@@ -12,8 +12,9 @@ import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PLUGIN_ROOT.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import tts_hook.kokoro as kokoro_module  # noqa: E402
 from tts_hook.config import (  # noqa: E402
@@ -400,19 +401,15 @@ port = 9999
     assert result.error == "GET http://127.0.0.1:9999/health failed: boom"
 
 
-def test_scripts_can_import_shared_modules_without_installing_package() -> None:
-    script = (
-        "import _bootstrap; "
-        "_bootstrap.ensure_src_on_path(); "
-        "from tts_hook.config import build_kokoro_urls, load_config; "
-        "print(build_kokoro_urls(load_config()).health_url)"
-    )
+def test_package_can_import_shared_modules_without_installing_package() -> None:
+    script = "from tts_hook.config import build_kokoro_urls, load_config; print(build_kokoro_urls(load_config()).health_url)"
 
     result = subprocess.run(
         [sys.executable, "-c", script],
-        cwd=ROOT / "scripts",
+        cwd=REPO_ROOT,
         text=True,
         capture_output=True,
+        env={"PYTHONPATH": str(REPO_ROOT / "src")},
         check=True,
     )
 

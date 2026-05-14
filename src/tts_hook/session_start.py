@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Codex SessionStart hook that checks Kokoro TTS availability."""
 
 from __future__ import annotations
@@ -7,14 +6,10 @@ from pathlib import Path
 from typing import Any, TextIO
 import sys
 
-import _bootstrap
-
-_bootstrap.ensure_src_on_path()
-
-from tts_hook.config import ConfigError, DEFAULT_VOICE, TtsHookConfig, load_config  # noqa: E402
-from tts_hook.hook_io import continue_result, read_hook_json, write_hook_json  # noqa: E402
-from tts_hook.kokoro import KokoroResult, check_health, list_voices  # noqa: E402
-from tts_hook.logging import HookLogger  # noqa: E402
+from .config import ConfigError, DEFAULT_VOICE, TtsHookConfig, load_config
+from .hook_io import continue_result, read_hook_json, write_hook_json
+from .kokoro import check_health, list_voices
+from .logging import HookLogger
 
 WARNING_PREFIX = "Kokoro TTS startup check warning:"
 
@@ -49,11 +44,7 @@ def main(
 
 
 def check_startup(config: TtsHookConfig, logger: HookLogger | None = None) -> str | None:
-    """Check Kokoro health and configured/default voice.
-
-    Returns a concise user-facing warning when startup should continue with a
-    degraded TTS state, or ``None`` when the check passes silently.
-    """
+    """Check Kokoro health and configured/default voice."""
 
     health = check_health(config)
     if not health.ok:
@@ -116,6 +107,12 @@ def extract_voice_names(data: Any) -> set[str]:
     return names
 
 
+def cli() -> int:
+    """Console-script entrypoint."""
+
+    return main()
+
+
 def _warning(message: str) -> str:
     return f"{WARNING_PREFIX} {message}"
 
@@ -127,7 +124,3 @@ def _write_stderr(stderr: TextIO | None, message: str) -> None:
         stream.flush()
     except OSError:
         return
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

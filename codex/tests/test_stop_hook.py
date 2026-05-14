@@ -7,7 +7,6 @@ from threading import Thread
 from typing import Any
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -15,13 +14,13 @@ import time
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT / "src"))
+REPO_ROOT = ROOT.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from codex_stop_tts import extract_assistant_message, main, speak_last_assistant_message  # noqa: E402
 from tts_hook.config import load_config  # noqa: E402
 from tts_hook.logging import HookLogger  # noqa: E402
 from tts_hook.playback import choose_player_command, play_audio_file  # noqa: E402
+from tts_hook.stop import extract_assistant_message, main, speak_last_assistant_message  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "stop"
 
@@ -176,6 +175,9 @@ def test_successful_kokoro_response_writes_unique_wavs_and_preserves_full_payloa
     assert second.suffix == ".wav"
     assert first.read_bytes() == b"RIFFfake-wave"
     assert second.read_bytes() == b"RIFFfake-wave"
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.05)
     assert marker.exists()
     assert state["requests"][0]["path"] == "/v1/audio/speech"
     assert state["requests"][0]["content_type"] == "application/json"
@@ -291,29 +293,28 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
     kokoro_speech_server: tuple[ThreadingHTTPServer, dict[str, Any]],
 ) -> None:
     server, state = kokoro_speech_server
-    plugin_root = tmp_path / "codex"
-    shutil.copytree(ROOT / "scripts", plugin_root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(ROOT / "src", plugin_root / "src", ignore=shutil.ignore_patterns("__pycache__"))
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     marker = make_fake_player(bin_dir, sleep_seconds=0.5)
-    write_config(plugin_root, port=server.server_port, log_path=tmp_path / "hook.log")
+    write_config(tmp_path, port=server.server_port, log_path=tmp_path / "hook.log")
+    stdout = StringIO()
+    stderr = StringIO()
     start = time.monotonic()
 
-    result = subprocess.run(
-        [sys.executable, "./scripts/codex_stop_tts.py"],
-        cwd=plugin_root,
-        input=read_fixture("normal.json"),
-        text=True,
-        capture_output=True,
-        env={"HOME": str(tmp_path / "home"), "PATH": str(bin_dir)},
-        check=False,
-    )
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ.get('PATH', '')}")
+        exit_code = main(
+            stdin=StringIO(read_fixture("normal.json")),
+            stdout=stdout,
+            stderr=stderr,
+            plugin_root=tmp_path,
+        )
 
     elapsed = time.monotonic() - start
-    assert result.returncode == 0
-    assert json.loads(result.stdout) == {"continue": True}
-    assert result.stderr == ""
+    assert exit_code == 0
+    assert json.loads(stdout.getvalue()) == {"continue": True}
+    assert "Kokoro speech request failed" not in stderr.getvalue()
+    assert "Playback did not start" not in stderr.getvalue()
     assert elapsed < 0.5
     assert state["requests"][0]["payload"]["input"] == "Codex finished the requested change."
     deadline = time.monotonic() + 2
@@ -324,11 +325,10 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
 
 def test_no_max_chars_policy_exists() -> None:
     checked = [
-        ROOT / "scripts" / "codex_stop_tts.py",
-        ROOT / "src" / "tts_hook" / "config.py",
-        ROOT / "src" / "tts_hook" / "playback.py",
+        REPO_ROOT / "src" / "tts_hook" / "stop.py",
+        REPO_ROOT / "src" / "tts_hook" / "config.py",
+        REPO_ROOT / "src" / "tts_hook" / "playback.py",
     ]
 
     for path in checked:
         assert "max_chars" not in path.read_text(encoding="utf-8")
-

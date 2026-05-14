@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Codex Stop hook that speaks the final assistant message through Kokoro."""
 
 from __future__ import annotations
@@ -8,15 +7,11 @@ from tempfile import NamedTemporaryFile
 from typing import Any, TextIO
 import sys
 
-import _bootstrap
-
-_bootstrap.ensure_src_on_path()
-
-from tts_hook.config import ConfigError, TtsHookConfig, load_config  # noqa: E402
-from tts_hook.hook_io import continue_result, read_hook_json, write_hook_json  # noqa: E402
-from tts_hook.kokoro import synthesize_speech  # noqa: E402
-from tts_hook.logging import HookLogger  # noqa: E402
-from tts_hook.playback import command_display, play_audio_file  # noqa: E402
+from .config import ConfigError, TtsHookConfig, load_config
+from .hook_io import continue_result, read_hook_json, write_hook_json
+from .kokoro import synthesize_speech
+from .logging import HookLogger
+from .playback import command_display, play_audio_file
 
 
 def main(
@@ -100,6 +95,12 @@ def write_unique_wav(audio: bytes) -> Path:
         return Path(handle.name)
 
 
+def cli() -> int:
+    """Console-script entrypoint."""
+
+    return main()
+
+
 def _write_stderr(stderr: TextIO | None, message: str) -> None:
     stream = stderr or sys.stderr
     try:
@@ -107,8 +108,3 @@ def _write_stderr(stderr: TextIO | None, message: str) -> None:
         stream.flush()
     except OSError:
         return
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-
