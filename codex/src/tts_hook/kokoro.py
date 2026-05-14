@@ -73,6 +73,7 @@ def _bytes_request(
         return KokoroResult(ok=False, error=f"Unsupported Kokoro URL scheme: {parsed.scheme}")
     if parsed.hostname is None or parsed.port is None:
         return KokoroResult(ok=False, error=f"Invalid Kokoro URL: {url}")
+    request_context = f"{method} {url}"
 
     path = parsed.path or "/"
     if parsed.query:
@@ -92,11 +93,16 @@ def _bytes_request(
         data = response.read()
         reason = response.reason
     except (http.client.HTTPException, TimeoutError, socket.timeout, OSError) as exc:
-        return KokoroResult(ok=False, error=str(exc))
+        detail = str(exc) or exc.__class__.__name__
+        return KokoroResult(ok=False, error=f"{request_context} failed: {detail}")
     finally:
         connection.close()
 
     if status < 200 or status >= 300:
         detail = data[:512].decode("utf-8", errors="replace").strip()
-        return KokoroResult(ok=False, status=status, error=f"HTTP {status}: {detail or reason}")
+        return KokoroResult(
+            ok=False,
+            status=status,
+            error=f"{request_context} failed: HTTP {status}: {detail or reason}",
+        )
     return KokoroResult(ok=True, status=status, data=data)

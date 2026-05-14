@@ -44,12 +44,25 @@ class HookLogger:
 
     def _write(self, level: str, message: str, *, content: str | None, stderr: bool) -> None:
         line = self._format_line(level, message, content)
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.log_path.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
+        try:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_path.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError as exc:
+            if stderr:
+                self._write_stderr(f"{line} log_write_failed={exc}")
+            return
         if stderr and self.stderr is not None:
+            self._write_stderr(line)
+
+    def _write_stderr(self, line: str) -> None:
+        if self.stderr is None:
+            return
+        try:
             self.stderr.write(line + "\n")
             self.stderr.flush()
+        except OSError:
+            return
 
     def _format_line(self, level: str, message: str, content: str | None) -> str:
         timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -64,4 +77,3 @@ def _brief_content(content: str) -> str:
     if len(normalized) <= MAX_CONTENT_LOG_CHARS:
         return normalized
     return f"{normalized[:MAX_CONTENT_LOG_CHARS]}..."
-
