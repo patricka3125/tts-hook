@@ -17,6 +17,7 @@ dev = [
 [project.scripts]
 tts-hook-startup = "tts_hook.session_start:cli"
 tts-hook-stop = "tts_hook.stop:cli"
+tts-hook-playback-supervisor = "tts_hook.playback_supervisor:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tts_hook"]

@@ -12,15 +12,14 @@ import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = ROOT.parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from tts_hook.session_start import check_startup, extract_voice_names, main  # noqa: E402
 from tts_hook.config import load_config  # noqa: E402
 from tts_hook.logging import HookLogger  # noqa: E402
 
-FIXTURES = ROOT / "tests" / "fixtures" / "session_start"
+FIXTURES = REPO_ROOT / "tests" / "fixtures" / "session_start"
 
 
 @pytest.fixture

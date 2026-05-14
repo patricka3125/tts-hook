@@ -12,8 +12,7 @@ import sys
 
 import pytest
 
-PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = PLUGIN_ROOT.parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import tts_hook.kokoro as kokoro_module  # noqa: E402
@@ -38,7 +37,6 @@ def test_loads_defaults_without_config_file(tmp_path: Path) -> None:
     assert config.speech.voice == "am_liam"
     assert config.speech.speed == 1.0
     assert config.playback.player == "auto"
-    assert config.playback.blocking is False
     assert config.timeouts.connect_seconds == 2.0
     assert config.timeouts.read_seconds == 20.0
     assert config.logging.path == "~/.codex/tts-hook.log"
@@ -97,7 +95,6 @@ stream = true
 
 [playback]
 player = "pw-play"
-blocking = true
 
 [timeouts]
 connect_seconds = 1.5
@@ -119,7 +116,6 @@ path = "./tmp/hook.log"
     assert payload["stream"] == STREAM
     assert payload["voice"] == "am_adam"
     assert config.playback.player == "pw-play"
-    assert config.playback.blocking is True
     assert config.logging.path == "./tmp/hook.log"
 
 

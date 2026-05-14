@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, TextIO
+import subprocess
 import sys
 
 from .config import ConfigError, TtsHookConfig, load_config
 from .hook_io import continue_result, read_hook_json, write_hook_json
 from .kokoro import synthesize_speech
 from .logging import HookLogger
-from .playback import command_display, play_audio_file
 
 
 def main(
@@ -65,16 +66,16 @@ def speak_last_assistant_message(
         logger.warning(f"Could not write Kokoro WAV response; skipping playback. {exc}", stderr=True)
         return None
 
-    playback = play_audio_file(
-        wav_path,
-        player=config.playback.player,
-        blocking=config.playback.blocking,
-    )
-    if not playback.ok:
-        logger.warning(f"Playback did not start; continuing. {playback.error or 'Unknown playback error.'}", stderr=True)
+    supervisor = spawn_playback_supervisor(wav_path, config)
+    if not supervisor.ok:
+        logger.warning(
+            f"Playback supervisor did not start; removed temporary WAV {wav_path} when possible. "
+            f"{supervisor.error or 'Unknown launch error.'}",
+            stderr=True,
+        )
         return wav_path
 
-    logger.info(f"Started playback with {command_display(playback.command)}")
+    logger.info(f"Started playback supervisor pid={supervisor.pid} for {wav_path}")
     return wav_path
 
 
@@ -93,6 +94,45 @@ def write_unique_wav(audio: bytes) -> Path:
     with NamedTemporaryFile(prefix="tts-hook-", suffix=".wav", delete=False) as handle:
         handle.write(audio)
         return Path(handle.name)
+
+
+@dataclass(frozen=True)
+class SupervisorLaunchResult:
+    """Success or failure details for playback supervisor launch."""
+
+    ok: bool
+    pid: int | None = None
+    error: str | None = None
+
+
+def spawn_playback_supervisor(wav_path: Path, config: TtsHookConfig) -> SupervisorLaunchResult:
+    """Start a detached supervisor that plays and then removes ``wav_path``."""
+
+    command = [
+        sys.executable,
+        "-m",
+        "tts_hook.playback_supervisor",
+        "--player",
+        config.playback.player,
+        "--log-path",
+        config.logging.path,
+        str(wav_path),
+    ]
+    try:
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        try:
+            wav_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return SupervisorLaunchResult(ok=False, error=str(exc))
+    return SupervisorLaunchResult(ok=True, pid=process.pid)
 
 
 def cli() -> int:
