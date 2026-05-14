@@ -176,6 +176,9 @@ def test_successful_kokoro_response_writes_unique_wavs_and_preserves_full_payloa
     assert second.suffix == ".wav"
     assert first.read_bytes() == b"RIFFfake-wave"
     assert second.read_bytes() == b"RIFFfake-wave"
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.05)
     assert marker.exists()
     assert state["requests"][0]["path"] == "/v1/audio/speech"
     assert state["requests"][0]["content_type"] == "application/json"
@@ -331,4 +334,3 @@ def test_no_max_chars_policy_exists() -> None:
 
     for path in checked:
         assert "max_chars" not in path.read_text(encoding="utf-8")
-

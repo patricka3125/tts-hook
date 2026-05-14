@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-tts-hook"
+version = "0.1.0"
+description = "Codex hooks that speak final responses through a local Kokoro-FastAPI server."
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.scripts]
+tts-hook-startup = "tts_hook.session_start:cli"
+tts-hook-stop = "tts_hook.stop:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tts_hook"]
