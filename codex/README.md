@@ -11,9 +11,6 @@ codex/
     plugin.json
   hooks/
     hooks.json
-  scripts/
-    codex_session_start_tts_check.py
-    codex_stop_tts.py
   config.example.toml
   README.md
 src/
@@ -30,18 +27,18 @@ The manifest points Codex at `./hooks/hooks.json`. Manifest paths are resolved
 relative to the plugin root.
 
 Hook commands are different: Codex runs command hooks from the active session
-`cwd`, not from the plugin root. For that reason, `hooks/hooks.json` does not use
-`./scripts/...`. It launches package console scripts through `uvx --from`:
+`cwd`, not from the plugin root. For that reason, `hooks/hooks.json` launches
+package console scripts through `uvx --from`:
 
 ```text
 uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main' tts-hook-startup
 uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main' tts-hook-stop
 ```
 
-The legacy files in `scripts/` are compatibility wrappers for local development
-and tests. The packaged runtime entrypoints are defined in the repository-root
+The packaged runtime entrypoints are defined in the repository-root
 `pyproject.toml`, and the Python runtime source lives under repository-root
-`src/tts_hook`.
+`src/tts_hook`. The `codex/` directory contains Codex plugin metadata and hook
+configuration only.
 
 ## Requirements
 

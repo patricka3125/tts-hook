@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Any
 import json
-import shutil
+import os
 import subprocess
 import sys
 
@@ -14,10 +14,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
-sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from codex_session_start_tts_check import check_startup, extract_voice_names, main  # noqa: E402
+from tts_hook.session_start import check_startup, extract_voice_names, main  # noqa: E402
 from tts_hook.config import load_config  # noqa: E402
 from tts_hook.logging import HookLogger  # noqa: E402
 
@@ -92,14 +91,15 @@ def kokoro_server() -> tuple[ThreadingHTTPServer, dict[str, Any]]:
         thread.join(timeout=2)
 
 
-def test_minimal_session_start_fixture_script_exits_zero_with_valid_stdout(
+def test_minimal_session_start_console_script_exits_zero_with_valid_stdout(
     tmp_path: Path,
 ) -> None:
-    env = {"HOME": str(tmp_path)}
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path)
 
     result = subprocess.run(
-        [sys.executable, "./scripts/codex_session_start_tts_check.py"],
-        cwd=ROOT,
+        ["uvx", "--from", ".", "tts-hook-startup"],
+        cwd=REPO_ROOT,
         input=read_fixture("resume.json"),
         text=True,
         capture_output=True,
@@ -111,29 +111,25 @@ def test_minimal_session_start_fixture_script_exits_zero_with_valid_stdout(
     assert json.loads(result.stdout)["continue"] is True
 
 
-def test_healthy_fixture_subprocess_passes_silently_with_plugin_local_config(
+def test_healthy_fixture_passes_silently_with_config_root(
     tmp_path: Path,
     kokoro_server: tuple[ThreadingHTTPServer, dict[str, Any]],
 ) -> None:
     server, state = kokoro_server
-    plugin_root = tmp_path / "codex"
-    shutil.copytree(ROOT / "scripts", plugin_root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(REPO_ROOT / "src", plugin_root.parent / "src", ignore=shutil.ignore_patterns("__pycache__"))
-    write_config(plugin_root, port=server.server_port, voice="af_sarah")
+    write_config(tmp_path, port=server.server_port, voice="af_sarah")
+    stdout = StringIO()
+    stderr = StringIO()
 
-    result = subprocess.run(
-        [sys.executable, "./scripts/codex_session_start_tts_check.py"],
-        cwd=plugin_root,
-        input=read_fixture("startup.json"),
-        text=True,
-        capture_output=True,
-        env={"HOME": str(tmp_path / "home")},
-        check=False,
+    exit_code = main(
+        stdin=StringIO(read_fixture("startup.json")),
+        stdout=stdout,
+        stderr=stderr,
+        plugin_root=tmp_path,
     )
 
-    assert result.returncode == 0
-    assert json.loads(result.stdout) == {"continue": True}
-    assert "warning" not in result.stderr.lower()
+    assert exit_code == 0
+    assert json.loads(stdout.getvalue()) == {"continue": True}
+    assert "warning" not in stderr.getvalue().lower()
     assert state["paths"] == ["/health", "/v1/audio/voices"]
 
 
