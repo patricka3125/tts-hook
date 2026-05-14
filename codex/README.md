@@ -14,16 +14,16 @@ codex/
   scripts/
     codex_session_start_tts_check.py
     codex_stop_tts.py
-  src/
-    tts_hook/
-      config.py
-      kokoro.py
-      playback.py
-      session_start.py
-      stop.py
   config.example.toml
-  pyproject.toml
   README.md
+src/
+  tts_hook/
+    config.py
+    kokoro.py
+    playback.py
+    session_start.py
+    stop.py
+pyproject.toml
 ```
 
 The manifest points Codex at `./hooks/hooks.json`. Manifest paths are resolved
@@ -34,12 +34,14 @@ Hook commands are different: Codex runs command hooks from the active session
 `./scripts/...`. It launches package console scripts through `uvx --from`:
 
 ```text
-uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main#subdirectory=codex' tts-hook-startup
-uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main#subdirectory=codex' tts-hook-stop
+uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main' tts-hook-startup
+uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main' tts-hook-stop
 ```
 
 The legacy files in `scripts/` are compatibility wrappers for local development
-and tests. The packaged runtime entrypoints are defined in `pyproject.toml`.
+and tests. The packaged runtime entrypoints are defined in the repository-root
+`pyproject.toml`, and the Python runtime source lives under repository-root
+`src/tts_hook`.
 
 ## Requirements
 
@@ -90,21 +92,21 @@ Run the startup entrypoint with local source:
 
 ```bash
 printf '{"hook_event_name":"SessionStart","source":"startup","cwd":"%s"}\n' "$PWD" \
-  | uvx --from ./codex tts-hook-startup
+  | uvx --from . tts-hook-startup
 ```
 
 Run the stop entrypoint with local source:
 
 ```bash
 printf '{"hook_event_name":"Stop","last_assistant_message":"Codex TTS smoke test.","cwd":"%s"}\n' "$PWD" \
-  | uvx --from ./codex tts-hook-stop
+  | uvx --from . tts-hook-stop
 ```
 
 To test the same command shape used by the installed plugin, replace `./codex`
 with:
 
 ```text
-git+https://github.com/patricka3125/tts-hook.git@main#subdirectory=codex
+git+https://github.com/patricka3125/tts-hook.git@main
 ```
 
 ## Configuration

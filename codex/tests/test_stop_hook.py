@@ -15,8 +15,9 @@ import time
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parent
 sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from codex_stop_tts import extract_assistant_message, main, speak_last_assistant_message  # noqa: E402
 from tts_hook.config import load_config  # noqa: E402
@@ -296,7 +297,7 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
     server, state = kokoro_speech_server
     plugin_root = tmp_path / "codex"
     shutil.copytree(ROOT / "scripts", plugin_root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(ROOT / "src", plugin_root / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(REPO_ROOT / "src", plugin_root.parent / "src", ignore=shutil.ignore_patterns("__pycache__"))
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     marker = make_fake_player(bin_dir, sleep_seconds=0.5)
@@ -328,8 +329,8 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
 def test_no_max_chars_policy_exists() -> None:
     checked = [
         ROOT / "scripts" / "codex_stop_tts.py",
-        ROOT / "src" / "tts_hook" / "config.py",
-        ROOT / "src" / "tts_hook" / "playback.py",
+        REPO_ROOT / "src" / "tts_hook" / "config.py",
+        REPO_ROOT / "src" / "tts_hook" / "playback.py",
     ]
 
     for path in checked:

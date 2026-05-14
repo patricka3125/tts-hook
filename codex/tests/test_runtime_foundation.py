@@ -12,8 +12,9 @@ import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PLUGIN_ROOT.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import tts_hook.kokoro as kokoro_module  # noqa: E402
 from tts_hook.config import (  # noqa: E402
@@ -410,7 +411,7 @@ def test_scripts_can_import_shared_modules_without_installing_package() -> None:
 
     result = subprocess.run(
         [sys.executable, "-c", script],
-        cwd=ROOT / "scripts",
+        cwd=PLUGIN_ROOT / "scripts",
         text=True,
         capture_output=True,
         check=True,

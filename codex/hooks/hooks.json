@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main#subdirectory=codex' tts-hook-startup",
+            "command": "uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main' tts-hook-startup",
             "timeout": 60,
             "statusMessage": "Checking Kokoro TTS"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main#subdirectory=codex' tts-hook-stop",
+            "command": "uvx --from 'git+https://github.com/patricka3125/tts-hook.git@main' tts-hook-stop",
             "timeout": 60,
             "statusMessage": "Speaking final response"
           }

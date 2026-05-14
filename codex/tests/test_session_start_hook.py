@@ -13,8 +13,9 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parent
 sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from codex_session_start_tts_check import check_startup, extract_voice_names, main  # noqa: E402
 from tts_hook.config import load_config  # noqa: E402
@@ -117,7 +118,7 @@ def test_healthy_fixture_subprocess_passes_silently_with_plugin_local_config(
     server, state = kokoro_server
     plugin_root = tmp_path / "codex"
     shutil.copytree(ROOT / "scripts", plugin_root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(ROOT / "src", plugin_root / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(REPO_ROOT / "src", plugin_root.parent / "src", ignore=shutil.ignore_patterns("__pycache__"))
     write_config(plugin_root, port=server.server_port, voice="af_sarah")
 
     result = subprocess.run(
