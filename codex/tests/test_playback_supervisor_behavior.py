@@ -9,10 +9,10 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT / "src"))
+REPO_ROOT = ROOT.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-import tts_playback_supervisor as supervisor_module  # noqa: E402
+from tts_hook import tts_playback_supervisor as supervisor_module  # noqa: E402
 from tts_hook.playback import PlaybackProcessResult  # noqa: E402
 
 
@@ -311,8 +311,9 @@ def test_supervisor_diagnostics_do_not_write_hook_json_to_stdout(tmp_path: Path)
     missing = tmp_path / "missing.wav"
 
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "tts_playback_supervisor.py"), str(missing)],
-        cwd=ROOT,
+        [sys.executable, "-m", "tts_hook.tts_playback_supervisor", str(missing)],
+        cwd=REPO_ROOT,
+        env={"PYTHONPATH": str(REPO_ROOT / "src")},
         text=True,
         capture_output=True,
         check=False,

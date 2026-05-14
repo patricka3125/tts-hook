@@ -9,8 +9,8 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT / "src"))
+REPO_ROOT = ROOT.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from tts_hook import playback as playback_module  # noqa: E402
 from tts_hook.playback import (  # noqa: E402
@@ -150,8 +150,9 @@ def test_terminate_process_group_escalates_to_sigkill_after_timeout(monkeypatch:
 
 def test_supervisor_entrypoint_help_imports_tts_hook_modules() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "tts_playback_supervisor.py"), "--help"],
-        cwd=ROOT,
+        [sys.executable, "-m", "tts_hook.tts_playback_supervisor", "--help"],
+        cwd=REPO_ROOT,
+        env={"PYTHONPATH": str(REPO_ROOT / "src")},
         text=True,
         capture_output=True,
         check=False,

@@ -13,11 +13,7 @@ import sys
 import termios
 import tty
 
-import _bootstrap
-
-_bootstrap.ensure_src_on_path()
-
-from tts_hook.playback import launch_audio_player_process, terminate_process_group  # noqa: E402
+from .playback import launch_audio_player_process, terminate_process_group
 
 ESCAPE = b"\x1b"
 POLL_INTERVAL_SECONDS = 0.05
@@ -35,6 +31,11 @@ def build_parser() -> ArgumentParser:
         default="auto",
         help="Playback command to use, or 'auto' to select the first available supported player.",
     )
+    parser.add_argument(
+        "--blocking",
+        action="store_true",
+        help="Accepted for playback config compatibility; the supervisor still owns playback waiting.",
+    )
     return parser
 
 
@@ -43,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     return run(args)
+
+
+def cli() -> int:
+    """Console-script entrypoint."""
+
+    return main()
 
 
 def run(args: Namespace) -> int:

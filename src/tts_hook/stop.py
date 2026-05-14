@@ -5,13 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, TextIO
+import subprocess
 import sys
 
 from .config import ConfigError, TtsHookConfig, load_config
 from .hook_io import continue_result, read_hook_json, write_hook_json
 from .kokoro import synthesize_speech
 from .logging import HookLogger
-from .playback import command_display, play_audio_file
+from .playback import PlaybackResult, command_display
 
 
 def main(
@@ -65,17 +66,42 @@ def speak_last_assistant_message(
         logger.warning(f"Could not write Kokoro WAV response; skipping playback. {exc}", stderr=True)
         return None
 
-    playback = play_audio_file(
-        wav_path,
-        player=config.playback.player,
-        blocking=config.playback.blocking,
-    )
+    playback = spawn_playback_supervisor(wav_path, config)
     if not playback.ok:
-        logger.warning(f"Playback did not start; continuing. {playback.error or 'Unknown playback error.'}", stderr=True)
+        logger.warning(f"Playback supervisor did not start; continuing. {playback.error or 'Unknown playback error.'}", stderr=True)
         return wav_path
 
-    logger.info(f"Started playback with {command_display(playback.command)}")
+    logger.info(f"Started playback supervisor with {command_display(playback.command)}")
     return wav_path
+
+
+def spawn_playback_supervisor(wav_path: Path, config: TtsHookConfig) -> PlaybackResult:
+    """Start the playback supervisor without waiting for playback completion."""
+
+    command = [
+        sys.executable,
+        "-m",
+        "tts_hook.tts_playback_supervisor",
+        str(wav_path),
+        "--player",
+        config.playback.player,
+    ]
+    if config.playback.blocking:
+        command.append("--blocking")
+
+    try:
+        process = subprocess.Popen(  # noqa: S603
+            tuple(command),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=config.plugin_root,
+        )
+    except OSError as exc:
+        return PlaybackResult(ok=False, command=tuple(command), error=str(exc))
+
+    return PlaybackResult(ok=True, command=tuple(command), pid=process.pid)
 
 
 def extract_assistant_message(payload: dict[str, Any]) -> str:
