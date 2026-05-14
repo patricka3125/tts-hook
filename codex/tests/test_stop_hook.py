@@ -169,6 +169,34 @@ def test_malformed_stop_input_returns_valid_json_and_stderr_only(tmp_path: Path)
     assert "not valid JSON" in stderr.getvalue()
 
 
+def test_config_error_returns_valid_json_and_does_not_spawn_supervisor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "tts-hook.toml").write_text("[kokoro]\nport = \"bad\"\n", encoding="utf-8")
+    stdout = StringIO()
+    stderr = StringIO()
+    spawned: list[Path] = []
+
+    def fake_spawn(wav_path: Path, config: Any) -> Any:
+        spawned.append(wav_path)
+        return stop_hook_module.PlaybackResult(ok=True, command=("supervisor", str(wav_path)), pid=123)
+
+    monkeypatch.setattr(stop_hook_module, "spawn_playback_supervisor", fake_spawn)
+
+    exit_code = main(
+        stdin=StringIO(read_fixture("normal.json")),
+        stdout=stdout,
+        stderr=stderr,
+        plugin_root=tmp_path,
+    )
+
+    assert exit_code == 0
+    assert json.loads(stdout.getvalue()) == {"continue": True}
+    assert "Could not load plugin-local TTS config" in stderr.getvalue()
+    assert spawned == []
+
+
 def test_successful_kokoro_response_writes_unique_wavs_and_preserves_full_payload(
     tmp_path: Path,
     kokoro_speech_server: tuple[ThreadingHTTPServer, dict[str, Any]],
