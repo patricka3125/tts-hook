@@ -1,0 +1,6 @@
+{
+  "event": "SessionStart",
+  "source": "startup",
+  "scenario": "unavailable_api"
+}
+
