@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.wav
+*.mp3
+*.log
+tts-hook.toml
+codex/tts-hook.toml
+codex/tmp/
+codex/.tmp/

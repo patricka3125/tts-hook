@@ -1,0 +1,14 @@
+{
+  "name": "tts-hook",
+  "version": "0.1.0",
+  "description": "Speak Codex final responses through a local Kokoro-FastAPI server.",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Kokoro TTS Hook",
+    "shortDescription": "Speak Codex responses with local Kokoro TTS.",
+    "longDescription": "Uses Codex hooks to check Kokoro availability on startup and play assistant responses when a turn stops.",
+    "developerName": "Local",
+    "category": "Productivity",
+    "capabilities": ["Read"]
+  }
+}

@@ -1,0 +1,18 @@
+[kokoro]
+host = "localhost"
+port = 8880
+
+[speech]
+voice = "am_liam"
+speed = 1.0
+
+[playback]
+player = "auto"
+blocking = false
+
+[timeouts]
+connect_seconds = 2.0
+read_seconds = 20.0
+
+[logging]
+path = "~/.codex/tts-hook.log"
