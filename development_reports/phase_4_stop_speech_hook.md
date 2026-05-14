@@ -41,10 +41,20 @@ No truncation, summarization, hotkey/runtime toggle behavior, or container lifec
 ## Design Notes
 
 - Playback is implemented in `codex/src/tts_hook/playback.py` so command selection can be tested independently from the Stop hook.
-- The hook writes generated WAV data with `NamedTemporaryFile(delete=False)`. It does not run broad cleanup or destructive cleanup actions.
+- The hook writes generated WAV data with `NamedTemporaryFile(delete=False)`. For Phase 4, generated WAV files are intentionally retained because playback is non-blocking and deleting files from a detached playback flow can race with host audio tools. It does not run broad cleanup or destructive cleanup actions. A later cleanup strategy should be best-effort, should only target hook-owned files created by the current run or a clearly hook-owned temp namespace, and must not delete unrelated files.
 - Tests use a temporary local HTTP server for Kokoro and fake playback executables on `PATH`; no real Kokoro service or host audio player is required for validation.
 - Background playback redirects stdin, stdout, and stderr to avoid polluting the Codex hook stdout contract.
+
+## Review Feedback Response
+
+1. Document generated WAV retention or add a future safe cleanup strategy.
+   - Implemented as documentation. WAV files remain retained in Phase 4 because non-blocking playback can race with deletion. Any future cleanup must be best-effort and limited to clearly hook-owned files.
+2. List both Phase 4 commits in this report.
+   - Implemented. The commit list now includes both the implementation commit and the report commit.
+3. Markdown fence cleanup.
+   - Deferred. The Phase 4 hard requirement is to speak the full `last_assistant_message` with no truncation or body-changing policy. Fence cleanup can be revisited later, but it should be designed carefully so it does not alter meaningful message content.
 
 ## Commit
 
 - `966f127 Implement stop speech hook`
+- `fa930d4 Add phase 4 development report`
