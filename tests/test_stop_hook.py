@@ -7,22 +7,21 @@ from threading import Thread
 from typing import Any
 import json
 import os
-import subprocess
 import sys
 import time
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = ROOT.parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from tts_hook.config import load_config  # noqa: E402
 from tts_hook.logging import HookLogger  # noqa: E402
 from tts_hook.playback import choose_player_command, play_audio_file  # noqa: E402
+from tts_hook.playback_supervisor import run_playback_supervisor  # noqa: E402
 from tts_hook.stop import extract_assistant_message, main, speak_last_assistant_message  # noqa: E402
 
-FIXTURES = ROOT / "tests" / "fixtures" / "stop"
+FIXTURES = REPO_ROOT / "tests" / "fixtures" / "stop"
 
 
 def read_fixture(name: str) -> str:
@@ -35,7 +34,6 @@ def write_config(
     port: int,
     log_path: Path,
     player: str = "auto",
-    blocking: bool = False,
     voice: str = "am_liam",
 ) -> None:
     (plugin_root / "tts-hook.toml").write_text(
@@ -50,7 +48,6 @@ speed = 1.2
 
 [playback]
 player = "{player}"
-blocking = {str(blocking).lower()}
 
 [logging]
 path = "{log_path}"
@@ -65,7 +62,7 @@ def make_fake_player(bin_dir: Path, name: str = "pw-play", *, sleep_seconds: flo
     player.write_text(
         "#!/bin/sh\n"
         f"printf '%s\\n' \"$1\" >> {marker}\n"
-        f"sleep {sleep_seconds}\n",
+        f"/bin/sleep {sleep_seconds}\n",
         encoding="utf-8",
     )
     player.chmod(0o755)
@@ -159,6 +156,7 @@ def test_successful_kokoro_response_writes_unique_wavs_and_preserves_full_payloa
     bin_dir.mkdir()
     marker = make_fake_player(bin_dir)
     monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setenv("PYTHONPATH", str(REPO_ROOT / "src"))
     write_config(tmp_path, port=server.server_port, log_path=tmp_path / "hook.log", voice="af_sarah")
     config = load_config(tmp_path)
     logger = HookLogger.from_config(config, stderr=StringIO())
@@ -173,12 +171,12 @@ def test_successful_kokoro_response_writes_unique_wavs_and_preserves_full_payloa
     assert first != second
     assert first.suffix == ".wav"
     assert second.suffix == ".wav"
-    assert first.read_bytes() == b"RIFFfake-wave"
-    assert second.read_bytes() == b"RIFFfake-wave"
     deadline = time.monotonic() + 2
-    while time.monotonic() < deadline and not marker.exists():
+    while time.monotonic() < deadline and (not marker.exists() or first.exists() or second.exists()):
         time.sleep(0.05)
     assert marker.exists()
+    assert not first.exists()
+    assert not second.exists()
     assert state["requests"][0]["path"] == "/v1/audio/speech"
     assert state["requests"][0]["content_type"] == "application/json"
     assert state["requests"][0]["payload"] == {
@@ -208,27 +206,19 @@ def test_kokoro_request_failure_logs_without_breaking_hook(tmp_path: Path) -> No
     assert "Kokoro speech request failed" in stderr.getvalue()
 
 
-def test_no_playback_command_logs_warning_and_returns_valid_hook_json(
-    tmp_path: Path,
-    kokoro_speech_server: tuple[ThreadingHTTPServer, dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    server, _state = kokoro_speech_server
+def test_supervisor_removes_wav_when_no_playback_command_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", "")
-    write_config(tmp_path, port=server.server_port, log_path=tmp_path / "hook.log")
-    stdout = StringIO()
     stderr = StringIO()
+    wav = tmp_path / "audio.wav"
+    log_path = tmp_path / "supervisor.log"
+    wav.write_bytes(b"RIFF")
 
-    exit_code = main(
-        stdin=StringIO(read_fixture("normal.json")),
-        stdout=stdout,
-        stderr=stderr,
-        plugin_root=tmp_path,
-    )
+    exit_code = run_playback_supervisor(wav, stderr=stderr, log_path=log_path)
 
-    assert exit_code == 0
-    assert json.loads(stdout.getvalue()) == {"continue": True}
+    assert exit_code == 1
+    assert not wav.exists()
     assert "Playback did not start" in stderr.getvalue()
+    assert "Playback did not start" in log_path.read_text(encoding="utf-8")
 
 
 def test_auto_player_selection_order(tmp_path: Path) -> None:
@@ -303,6 +293,7 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
 
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ.get('PATH', '')}")
+        monkeypatch.setenv("PYTHONPATH", str(REPO_ROOT / "src"))
         exit_code = main(
             stdin=StringIO(read_fixture("normal.json")),
             stdout=stdout,
@@ -315,12 +306,28 @@ def test_stop_fixture_subprocess_posts_audio_and_spawns_playback(
     assert json.loads(stdout.getvalue()) == {"continue": True}
     assert "Kokoro speech request failed" not in stderr.getvalue()
     assert "Playback did not start" not in stderr.getvalue()
+    assert "Playback supervisor did not start" not in stderr.getvalue()
     assert elapsed < 0.5
     assert state["requests"][0]["payload"]["input"] == "Codex finished the requested change."
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline and not marker.exists():
         time.sleep(0.05)
     assert marker.exists()
+
+
+def test_supervisor_waits_for_playback_and_removes_wav(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    marker = make_fake_player(bin_dir)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    wav = tmp_path / "audio.wav"
+    wav.write_bytes(b"RIFF")
+
+    exit_code = run_playback_supervisor(wav, stderr=StringIO())
+
+    assert exit_code == 0
+    assert marker.exists()
+    assert not wav.exists()
 
 
 def test_no_max_chars_policy_exists() -> None:

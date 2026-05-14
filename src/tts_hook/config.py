@@ -23,7 +23,6 @@ DEFAULT_PORT = 8880
 DEFAULT_VOICE = "am_liam"
 DEFAULT_SPEED = 1.0
 DEFAULT_PLAYER = "auto"
-DEFAULT_BLOCKING = False
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 2.0
 DEFAULT_READ_TIMEOUT_SECONDS = 20.0
 DEFAULT_LOG_PATH = "~/.codex/tts-hook.log"
@@ -55,7 +54,6 @@ class PlaybackConfig:
     """Playback settings shared by future hook implementations."""
 
     player: str = DEFAULT_PLAYER
-    blocking: bool = DEFAULT_BLOCKING
 
 
 @dataclass(frozen=True)
@@ -143,7 +141,6 @@ def load_config(plugin_root: Path | None = None) -> TtsHookConfig:
         ),
         playback=PlaybackConfig(
             player=_string_value(raw, "playback", "player", DEFAULT_PLAYER) or DEFAULT_PLAYER,
-            blocking=_bool_value(raw, "playback", "blocking", DEFAULT_BLOCKING),
         ),
         timeouts=TimeoutConfig(
             connect_seconds=_float_value(

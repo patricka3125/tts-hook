@@ -28,6 +28,16 @@ class PlaybackResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class PlaybackProcessResult:
+    """Success or failure details for a launched playback process."""
+
+    ok: bool
+    command: tuple[str, ...] = ()
+    process: subprocess.Popen[bytes] | None = None
+    error: str | None = None
+
+
 def choose_player_command(player: str, *, path_env: str | None = None) -> tuple[str, ...] | None:
     """Return the configured playback command, or the first available auto player."""
 
@@ -50,6 +60,33 @@ def choose_player_command(player: str, *, path_env: str | None = None) -> tuple[
     return None
 
 
+def launch_audio_player_process(
+    wav_path: Path,
+    *,
+    player: str = "auto",
+    path_env: str | None = None,
+) -> PlaybackProcessResult:
+    """Start host playback in a detached process group."""
+
+    command_prefix = choose_player_command(player, path_env=path_env)
+    if command_prefix is None:
+        return PlaybackProcessResult(ok=False, error=f"No playback command found for player={player!r}")
+
+    command = (*command_prefix, str(wav_path))
+    try:
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return PlaybackProcessResult(ok=False, command=command, error=str(exc))
+
+    return PlaybackProcessResult(ok=True, command=command, process=process)
+
+
 def play_audio_file(
     wav_path: Path,
     *,
@@ -63,32 +100,24 @@ def play_audio_file(
     reserved for Codex hook JSON.
     """
 
-    command_prefix = choose_player_command(player, path_env=path_env)
-    if command_prefix is None:
-        return PlaybackResult(ok=False, error=f"No playback command found for player={player!r}")
-
-    command = (*command_prefix, str(wav_path))
-    try:
-        process = subprocess.Popen(  # noqa: S603
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=not blocking,
-        )
-    except OSError as exc:
-        return PlaybackResult(ok=False, command=command, error=str(exc))
+    launched = launch_audio_player_process(wav_path, player=player, path_env=path_env)
+    if not launched.ok or launched.process is None:
+        return PlaybackResult(ok=False, command=launched.command, error=launched.error)
 
     if blocking:
-        return_code = process.wait()
+        return_code = launched.process.wait()
         if return_code != 0:
-            return PlaybackResult(ok=False, command=command, pid=process.pid, error=f"Playback exited {return_code}")
+            return PlaybackResult(
+                ok=False,
+                command=launched.command,
+                pid=launched.process.pid,
+                error=f"Playback exited {return_code}",
+            )
 
-    return PlaybackResult(ok=True, command=command, pid=process.pid)
+    return PlaybackResult(ok=True, command=launched.command, pid=launched.process.pid)
 
 
 def command_display(command: Sequence[str]) -> str:
     """Return a concise command string for logs."""
 
     return " ".join(command)
-
