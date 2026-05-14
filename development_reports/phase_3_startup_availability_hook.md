@@ -22,7 +22,7 @@ No playback, stop-hook behavior, hotkey/runtime toggle behavior, or container li
 - Healthy Kokoro plus a valid configured/default voice returns only `{"continue": true}` without a warning.
 - Health failures warn and continue without blocking.
 - Voice endpoint failures or unreadable voice responses warn and continue.
-- Invalid voices warn and name both the configured voice and the default `am_liam` behavior.
+- Invalid voices warn, name the configured voice, and tell the user to update `speech.voice` or remove it to use `am_liam`.
 - Local JSON fixtures can be piped into the startup script without Codex.
 - The hook does not start containers, stop containers, delete containers, play audio, or add runtime toggles.
 
@@ -42,6 +42,23 @@ No playback, stop-hook behavior, hotkey/runtime toggle behavior, or container li
 - If the voice list cannot be read or parsed, the hook warns instead of silently skipping validation.
 - Tests use a temporary local HTTP server rather than requiring a real Kokoro container.
 
+## Review Feedback Response
+
+1. Make the invalid configured voice warning more actionable.
+   - Implemented. The warning now tells the user to update `speech.voice` in `tts-hook.toml`, or remove it to use `am_liam`.
+2. Add a subprocess-level healthy-path fixture test.
+   - Implemented. A new pytest case copies the plugin script and `src` tree to a temporary plugin root, writes plugin-local config pointing at a local test HTTP server, pipes a startup fixture through the real script process, and verifies `{"continue": true}` with no warning.
+3. List the report commit in this development report.
+   - Implemented. The commit list now includes both the implementation commit and the report commit.
+
+## Review Revision Validation
+
+- `python3 -m compileall codex/src codex/scripts codex/tests` passed.
+- `uv run --with pytest pytest codex/tests` passed with 28 tests.
+- `for f in ./tests/fixtures/session_start/*.json; do HOME=$(mktemp -d) python3 ./scripts/codex_session_start_tts_check.py < "$f" >/tmp/tts-hook-fixture-output.json && python3 -m json.tool /tmp/tts-hook-fixture-output.json >/dev/null || exit 1; done` passed from `/home/bajablast69/dev/tts-hook/codex`.
+- `python3 -m pytest codex/tests` still fails because system Python has no `pytest` installed.
+
 ## Commit
 
 - `a21153d Implement startup availability hook`
+- `b8b3aca Add phase 3 development report`
