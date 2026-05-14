@@ -80,7 +80,7 @@ def check_startup(config: TtsHookConfig, logger: HookLogger | None = None) -> st
     if configured_voice not in available_voices:
         warning = (
             f"Kokoro voice '{configured_voice}' is not listed by the server; continuing. "
-            f"If no voice is configured, the default voice is '{DEFAULT_VOICE}'."
+            f"Update speech.voice in tts-hook.toml, or remove it to use '{DEFAULT_VOICE}'."
         )
         if logger is not None:
             logger.warning(warning, stderr=True)

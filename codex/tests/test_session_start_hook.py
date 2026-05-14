@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Any
 import json
+import shutil
 import subprocess
 import sys
 
@@ -109,6 +110,32 @@ def test_minimal_session_start_fixture_script_exits_zero_with_valid_stdout(
     assert json.loads(result.stdout)["continue"] is True
 
 
+def test_healthy_fixture_subprocess_passes_silently_with_plugin_local_config(
+    tmp_path: Path,
+    kokoro_server: tuple[ThreadingHTTPServer, dict[str, Any]],
+) -> None:
+    server, state = kokoro_server
+    plugin_root = tmp_path / "codex"
+    shutil.copytree(ROOT / "scripts", plugin_root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "src", plugin_root / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    write_config(plugin_root, port=server.server_port, voice="af_sarah")
+
+    result = subprocess.run(
+        [sys.executable, "./scripts/codex_session_start_tts_check.py"],
+        cwd=plugin_root,
+        input=read_fixture("startup.json"),
+        text=True,
+        capture_output=True,
+        env={"HOME": str(tmp_path / "home")},
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {"continue": True}
+    assert "warning" not in result.stderr.lower()
+    assert state["paths"] == ["/health", "/v1/audio/voices"]
+
+
 def test_healthy_kokoro_and_valid_voice_pass_silently(
     tmp_path: Path,
     startup_fixture: str,
@@ -173,6 +200,8 @@ def test_invalid_voice_warns_with_configured_voice_and_default_behavior(
     assert result["continue"] is True
     assert "bad_voice" in result["systemMessage"]
     assert "am_liam" in result["systemMessage"]
+    assert "Update speech.voice" in result["systemMessage"]
+    assert "remove it" in result["systemMessage"]
     assert state["paths"] == ["/health", "/v1/audio/voices"]
 
 
