@@ -1,0 +1,14 @@
+{
+  "name": "tts-hook",
+  "version": "0.1.0-dev",
+  "description": "Development build of the Kokoro TTS Codex plugin.",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Kokoro TTS Hook (Development)",
+    "shortDescription": "Speak Codex responses with local Kokoro TTS from a local checkout.",
+    "longDescription": "Uses Codex hooks to run the current local tts-hook checkout through uv.",
+    "developerName": "Local",
+    "category": "Productivity",
+    "capabilities": ["Read"]
+  }
+}
