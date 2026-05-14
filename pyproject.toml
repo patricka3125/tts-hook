@@ -9,6 +9,11 @@ description = "Codex hooks that speak final responses through a local Kokoro-Fas
 readme = "codex/README.md"
 requires-python = ">=3.11"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.scripts]
 tts-hook-startup = "tts_hook.session_start:cli"
 tts-hook-stop = "tts_hook.stop:cli"
